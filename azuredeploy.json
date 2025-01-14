@@ -6,8 +6,8 @@
             "defaultValue": "alertplaybook-defaultname",
             "type": "String"
         },
-        "QevlarAiToken": {
-            "defaultValue": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODU1ZWIwYS1jOGNmLTQ3ZWItOWU3OC1lOWM2MmM3NDQyNDkiLCJhdWQiOlsicWlwLXB1YmxpYy1hcGkiXSwiZXhwIjoxNzY3MjIyMDAwfQ.AAqtQDNqpdplz2YhZ0IlXQM7K7Yg7nZbe_Oh2nTY7wb21vcW6G_VMBaYfbg-20dWHhI1pjLU6QfFmGxeQ8l3EA",
+        "QevlarAiAuthToken": {
+            "defaultValue": "",
             "type": "String"
         }
     },
@@ -45,7 +45,7 @@
                     "contentVersion": "1.0.0.0",
                     "parameters": {
                         "param_qevlarai_token": {
-                            "defaultValue": "[parameters('QevlarAiToken')]",
+                            "defaultValue": "[parameters('QevlarAiAuthToken')]",
                             "type": "String"
                         },
                         "$connections": {
