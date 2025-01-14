@@ -1,4 +1,4 @@
-# Run-Notebook-After-Incident-Creation
+# Run QuevlarAi Investigation after Azure Sentinel Incident creation
 author: QevlarAi
 
 This playbook is triggered by a Microsoft Sentinel newly created Incident. It creates a new Investigation by Qevlar AI and insert a new comment in the Incident with the result of the Investigation.  
