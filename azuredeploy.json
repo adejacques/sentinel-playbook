@@ -1,0 +1,337 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "PlaybookName": {
+            "defaultValue": "alertplaybook-defaultname",
+            "type": "String"
+        },
+        "QevlarAiToken": {
+            "defaultValue": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODU1ZWIwYS1jOGNmLTQ3ZWItOWU3OC1lOWM2MmM3NDQyNDkiLCJhdWQiOlsicWlwLXB1YmxpYy1hcGkiXSwiZXhwIjoxNzY3MjIyMDAwfQ.AAqtQDNqpdplz2YhZ0IlXQM7K7Yg7nZbe_Oh2nTY7wb21vcW6G_VMBaYfbg-20dWHhI1pjLU6QfFmGxeQ8l3EA",
+            "type": "String"
+        }
+    },
+    "variables": {
+        "AzureSentinelConnectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('AzureSentinelConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "V1",
+            "properties": {
+              "displayName": "[parameters('PlaybookName')]",
+              "customParameterValues": {},
+              "parameterValueType": "Alternative",
+              "api": {
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+              }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('PlaybookName')]",
+            "location": "[resourceGroup().location]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "param_qevlarai_token": {
+                            "defaultValue": "[parameters('QevlarAiToken')]",
+                            "type": "String"
+                        },
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Try_Get_Investigation_result": {
+                            "actions": {
+                                "Until": {
+                                    "actions": {
+                                        "Fetch_Investigation_Results_using_QevlarAI_API": {
+                                            "type": "Http",
+                                            "inputs": {
+                                                "uri": "https://api.external.qevlar.com/v2/investigations/@{outputs('Get_AlertId')}/html",
+                                                "method": "GET",
+                                                "headers": {
+                                                    "Authorization": "Bearer @{parameters('param_qevlarai_token')}",
+                                                    "X-QEVLAR-ACCESS-TOKEN": "gKqBjRMoPMaQbV8PjyWpVZbPbKgMsMNDBsCqGoBCQeoNrUosGKv9kaecvNHXzL8o"
+                                                }
+                                            },
+                                            "runtimeConfiguration": {
+                                                "contentTransfer": {
+                                                    "transferMode": "Chunked"
+                                                }
+                                            }
+                                        },
+                                        "Set_IsInvestigationCompleted": {
+                                            "runAfter": {
+                                                "Fetch_Investigation_Results_using_QevlarAI_API": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "IsInvestigationCompleted",
+                                                "value": "@if(equals(outputs('Fetch_Investigation_Results_using_QevlarAI_API')?['statusCode'],200), true, false)"
+                                            }
+                                        },
+                                        "If_Investigation_is_not_completed,_add_a_delay_of_1_minute": {
+                                            "actions": {
+                                                "Wait_1_minute": {
+                                                    "type": "Wait",
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 1,
+                                                            "unit": "Minute"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Set_IsInvestigationCompleted": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {}
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "not": {
+                                                            "equals": [
+                                                                "@variables('IsInvestigationCompleted')",
+                                                                true
+                                                            ]
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        }
+                                    },
+                                    "expression": "@equals(variables('IsInvestigationCompleted'),true)",
+                                    "limit": {
+                                        "count": 3,
+                                        "timeout": "PT1H"
+                                    },
+                                    "type": "Until"
+                                },
+                                "Add_comment_to_incident_(V3)_if_get_investegation_succeeds": {
+                                    "runAfter": {
+                                        "Until": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "message": "@body('Fetch_Investigation_Results_using_QevlarAI_API')"
+                                        },
+                                        "path": "/Incidents/Comment"
+                                    }
+                                },
+                                "Terminate_Success": {
+                                    "runAfter": {
+                                        "Add_comment_to_incident_(V3)_if_get_investegation_succeeds": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Succeeded"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Try_Create_Investigation": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Catch_Get_Investigation_result": {
+                            "actions": {
+                                "Add_comment_to_incident_(V3)_if_get_investegation_fails": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "message": "<p class=\"editor-paragraph\">Investigation failed</p>"
+                                        },
+                                        "path": "/Incidents/Comment"
+                                    }
+                                },
+                                "Terminate_Failed_2": {
+                                    "runAfter": {
+                                        "Add_comment_to_incident_(V3)_if_get_investegation_fails": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Failed"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Try_Get_Investigation_result": [
+                                    "TimedOut",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Try_Create_Investigation": {
+                            "actions": {
+                                "Create_Investigation_using_QevlarAI_API": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "uri": "https://api.external.qevlar.com/v2/investigations",
+                                        "method": "POST",
+                                        "headers": {
+                                            "Authorization": "Bearer @{parameters('param_qevlarai_token')}",
+                                            "X-QEVLAR-ACCESS-TOKEN": "gKqBjRMoPMaQbV8PjyWpVZbPbKgMsMNDBsCqGoBCQeoNrUosGKv9kaecvNHXzL8o"
+                                        },
+                                        "body": {
+                                            "source_type": "Sentinel",
+                                            "content": "@triggerBody()"
+                                        }
+                                    },
+                                    "runtimeConfiguration": {
+                                        "contentTransfer": {
+                                            "transferMode": "Chunked"
+                                        }
+                                    }
+                                },
+                                "Get_AlertId": {
+                                    "runAfter": {
+                                        "Create_Investigation_using_QevlarAI_API": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@body('Create_Investigation_using_QevlarAI_API')?['alert_id']"
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variable_IsInvestigationCompleted_to_false": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Catch_Create_Investigation": {
+                            "actions": {
+                                "Add_comment_to_incident_(V3)_create_investigation_failure": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "message": "<p class=\"editor-paragraph\">Investigation request rejected</p>"
+                                        },
+                                        "path": "/Incidents/Comment"
+                                    }
+                                },
+                                "Terminate_Failed_1": {
+                                    "runAfter": {
+                                        "Add_comment_to_incident_(V3)_create_investigation_failure": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Failed"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Try_Create_Investigation": [
+                                    "TimedOut",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Initialize_variable_IsInvestigationCompleted_to_false": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "IsInvestigationCompleted",
+                                        "type": "boolean",
+                                        "value": false
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]",
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('AzureSentinelConnectionName'))]",
+                                "connectionName": "[variables('AzureSentinelConnectionName')]",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
