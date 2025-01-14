@@ -6,7 +6,7 @@ This playbook is triggered by a Microsoft Sentinel newly created Incident. It cr
 ## Prerequisites
 
 Before deploying the the playbook you will need to:
-- Set the required permissions 
+- Grant Microsoft Sentinel Automation Contributor role to the Azure Security Insights Service Principal in Resource Group scope (RG containing the playbook)
 
 ## Quick Deployment
 [Learn more about playbook deployment](https://github.com/Azure/Azure-Sentinel/tree/master/Playbooks/ReadMe.md)
@@ -18,3 +18,7 @@ Before deploying the the playbook you will need to:
 [Learn more about automation rules](https://docs.microsoft.com/azure/sentinel/automate-incident-handling-with-automation-rules#creating-and-managing-automation-rules)
 
 After deployment, attach this playbook to an **automation rule** so it runs when the incident is created.
+
+After deploying the the playbook you will need to:
+- Grant Owner role to the User creating the automation rule in Resource Group scope (RG containing the playbook) 
+- Grant Microsoft Sentinel Responder role to the playbook (Logic App) in Log Analytics workspace linked to Azure Sentinel scope
